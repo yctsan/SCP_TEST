@@ -71,9 +71,16 @@ object AudioDecoder {
         var outputDone = false
         var actualChannels = channels
         val info = MediaCodec.BufferInfo()
+        // Safety counters to prevent infinite loops (e.g. stalled MP3 codec)
+        var noProgressCount = 0
+        val MAX_NO_PROGRESS = 200  // ~4 s total with 10ms timeouts each side
+        var eofRetries = 0
+        val MAX_EOF_RETRIES = 100  // give decoder up to ~2 s to flush after EOF
 
         try {
             while (!outputDone) {
+                var madeProgress = false
+
                 // Feed compressed input
                 if (!inputDone) {
                     val idx = decoder.dequeueInputBuffer(10_000L)
@@ -88,6 +95,7 @@ object AudioDecoder {
                             decoder.queueInputBuffer(idx, 0, n, extractor.sampleTime, 0)
                             extractor.advance()
                         }
+                        madeProgress = true
                     }
                 }
 
@@ -95,6 +103,8 @@ object AudioDecoder {
                 val outIdx = decoder.dequeueOutputBuffer(info, 10_000L)
                 when {
                     outIdx >= 0 -> {
+                        madeProgress = true
+                        eofRetries = 0
                         val outBuf = decoder.getOutputBuffer(outIdx)
                         if (outBuf != null && info.size > 0) {
                             val data = ByteArray(info.size)
@@ -124,14 +134,22 @@ object AudioDecoder {
                             outputDone = true
                     }
                     outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                        madeProgress = true
                         val nf = decoder.outputFormat
                         if (nf.containsKey(MediaFormat.KEY_CHANNEL_COUNT))
                             actualChannels = nf.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
                     }
                     outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> {
-                        if (inputDone) outputDone = true
+                        if (inputDone) {
+                            eofRetries++
+                            if (eofRetries >= MAX_EOF_RETRIES) outputDone = true
+                        }
                     }
                 }
+
+                // Break out if the codec makes no progress for too long
+                if (madeProgress) noProgressCount = 0 else noProgressCount++
+                if (noProgressCount >= MAX_NO_PROGRESS) outputDone = true
             }
         } catch (_: Exception) {
         } finally {
