@@ -11,9 +11,7 @@
     <string name="export_done">Export Complete</string>
     <string name="export_saved">Saved as %1$s</string>
     <string name="mp3_note">MP3 was re-encoded to AAC/M4A (lossless direct copy is not possible for MP3).</string>
-    <string name="share">Share</string>
-    <string name="share_via">Share audio via…</string>
-    <string name="err_no_file">No audio file provided.</string>
+<string name="err_no_file">No audio file provided.</string>
     <string name="err_load">Could not load this audio file.</string>
     <string name="err_playback">Playback error.</string>
     <string name="err_too_short">Selection must be at least 0.5 seconds.</string>

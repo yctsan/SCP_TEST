@@ -1,6 +1,7 @@
 package com.example.audiotrimcrop
 
-import android.content.Intent
+import android.app.Activity
+import android.app.AlertDialog
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.net.Uri
@@ -15,12 +16,10 @@ import android.widget.ImageButton
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.widget.Toolbar
-import androidx.core.content.FileProvider
-import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -28,7 +27,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class TrimActivity : AppCompatActivity() {
+class TrimActivity : Activity() {
+
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     // ── Views ─────────────────────────────────────────────────────────────────
     private lateinit var waveform: WaveformView
@@ -42,6 +43,7 @@ class TrimActivity : AppCompatActivity() {
     private lateinit var tvHint: TextView
     private lateinit var pbLoad: ProgressBar
     private lateinit var pbExport: ProgressBar
+    private lateinit var loadingOverlay: View
 
     // ── Audio ─────────────────────────────────────────────────────────────────
     private var audioUri: Uri? = null
@@ -80,22 +82,21 @@ class TrimActivity : AppCompatActivity() {
     }
 
     private fun bindViews() {
-        val toolbar = findViewById<Toolbar>(R.id.toolbar)
-        setSupportActionBar(toolbar)
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        supportActionBar?.setHomeAsUpIndicator(R.drawable.ic_back)
+        val btnBack = findViewById<ImageButton>(R.id.btn_back)
+        btnBack.setOnClickListener { finish() }
 
-        waveform   = findViewById(R.id.waveform)
-        btnPlay    = findViewById(R.id.btn_play)
-        btnExport  = findViewById(R.id.btn_export)
-        tvStart    = findViewById(R.id.tv_start)
-        tvEnd      = findViewById(R.id.tv_end)
-        tvTotal    = findViewById(R.id.tv_total)
-        tvFileName = findViewById(R.id.tv_filename)
-        tvSelLen   = findViewById(R.id.tv_sel_len)
-        tvHint     = findViewById(R.id.tv_hint)
-        pbLoad     = findViewById(R.id.pb_load)
-        pbExport   = findViewById(R.id.pb_export)
+        waveform      = findViewById(R.id.waveform)
+        btnPlay       = findViewById(R.id.btn_play)
+        btnExport     = findViewById(R.id.btn_export)
+        tvStart       = findViewById(R.id.tv_start)
+        tvEnd         = findViewById(R.id.tv_end)
+        tvTotal       = findViewById(R.id.tv_total)
+        tvFileName    = findViewById(R.id.tv_filename)
+        tvSelLen      = findViewById(R.id.tv_sel_len)
+        tvHint        = findViewById(R.id.tv_hint)
+        pbLoad        = findViewById(R.id.pb_load)
+        pbExport      = findViewById(R.id.pb_export)
+        loadingOverlay = findViewById(R.id.loading_overlay)
 
         btnPlay.isEnabled   = false
         btnExport.isEnabled = false
@@ -125,17 +126,15 @@ class TrimActivity : AppCompatActivity() {
 
     private fun loadWaveform() {
         val uri = audioUri ?: return
-        pbLoad.visibility  = View.VISIBLE
-        tvHint.visibility  = View.VISIBLE
-        btnPlay.isEnabled  = false
-        btnExport.isEnabled = false
+        loadingOverlay.visibility = View.VISIBLE
+        btnPlay.isEnabled          = false
+        btnExport.isEnabled        = false
 
-        lifecycleScope.launch {
+        scope.launch {
             val result = withContext(Dispatchers.IO) {
                 AudioDecoder.decodeWaveform(this@TrimActivity, uri, 300)
             }
-            pbLoad.visibility = View.GONE
-            tvHint.visibility = View.GONE
+            loadingOverlay.visibility = View.GONE
 
             if (result != null) {
                 val (amps, dur) = result
@@ -199,7 +198,7 @@ class TrimActivity : AppCompatActivity() {
 
         val outFile = buildOutputFile()
 
-        lifecycleScope.launch {
+        scope.launch {
             val ok = withContext(Dispatchers.IO) {
                 AudioTrimmer.trim(
                     this@TrimActivity, uri, outFile,
@@ -234,23 +233,8 @@ class TrimActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle(R.string.export_done)
             .setMessage(getString(R.string.export_saved, f.name) + note)
-            .setPositiveButton(R.string.share) { _, _ -> shareFile(f) }
-            .setNegativeButton(android.R.string.ok, null)
+            .setPositiveButton(android.R.string.ok, null)
             .show()
-    }
-
-    private fun shareFile(f: File) {
-        val fu = FileProvider.getUriForFile(this, "$packageName.fileprovider", f)
-        startActivity(
-            Intent.createChooser(
-                Intent(Intent.ACTION_SEND).apply {
-                    type = "audio/mp4"
-                    putExtra(Intent.EXTRA_STREAM, fu)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                },
-                getString(R.string.share_via)
-            )
-        )
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -262,8 +246,8 @@ class TrimActivity : AppCompatActivity() {
     }
 
     private fun fmt(ms: Long): String {
-        val m = ms / 60_000L
-        val s = (ms % 60_000L) / 1000L
+        val m  = ms / 60_000L
+        val s  = (ms % 60_000L) / 1000L
         val cs = (ms % 1000L) / 10L
         return "%02d:%02d.%02d".format(m, s, cs)
     }
@@ -283,10 +267,6 @@ class TrimActivity : AppCompatActivity() {
         player = null
     }
 
-    override fun onSupportNavigateUp(): Boolean {
-        onBackPressedDispatcher.onBackPressed(); return true
-    }
-
     override fun onPause() {
         super.onPause()
         if (playing) stopPlayback()
@@ -296,5 +276,6 @@ class TrimActivity : AppCompatActivity() {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
         releasePlayer()
+        scope.cancel()
     }
 }

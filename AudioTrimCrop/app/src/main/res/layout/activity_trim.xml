@@ -1,185 +1,171 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg">
+    android:background="@color/bg"
+    android:orientation="vertical">
 
-    <!-- Toolbar -->
-    <androidx.appcompat.widget.Toolbar
-        android:id="@+id/toolbar"
-        android:layout_width="0dp"
-        android:layout_height="?attr/actionBarSize"
+    <!-- Action bar row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
         android:background="@color/surface"
         android:elevation="4dp"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:title=""
-        app:titleTextColor="@color/white" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
 
-    <!-- File name -->
-    <TextView
-        android:id="@+id/tv_filename"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginHorizontal="16dp"
-        android:layout_marginTop="12dp"
-        android:ellipsize="middle"
-        android:maxLines="1"
-        android:textColor="@color/white"
-        android:textSize="15sp"
-        android:textStyle="bold"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/toolbar" />
+        <ImageButton
+            android:id="@+id/btn_back"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Back"
+            android:src="@drawable/ic_back"
+            android:tint="@color/white" />
+
+        <TextView
+            android:id="@+id/tv_filename"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="16dp"
+            android:layout_weight="1"
+            android:ellipsize="middle"
+            android:maxLines="1"
+            android:textColor="@color/white"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+    </LinearLayout>
 
     <!-- Total duration -->
     <TextView
         android:id="@+id/tv_total"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="4dp"
         android:fontFamily="monospace"
         android:textColor="@color/text_dim"
-        android:textSize="12sp"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/tv_filename" />
+        android:textSize="12sp" />
 
-    <!-- Loading spinner + hint -->
-    <ProgressBar
-        android:id="@+id/pb_load"
-        style="@style/Widget.AppCompat.ProgressBar"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:indeterminateTint="@color/accent"
-        android:visibility="visible"
-        app:layout_constraintBottom_toBottomOf="@id/waveform"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="@id/waveform" />
-
-    <TextView
-        android:id="@+id/tv_hint"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:text="@string/analyzing"
-        android:textColor="@color/text_dim"
-        android:textSize="12sp"
-        android:visibility="visible"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/pb_load" />
-
-    <!-- Waveform -->
-    <com.example.audiotrimcrop.WaveformView
-        android:id="@+id/waveform"
-        android:layout_width="0dp"
+    <!-- Waveform + loading overlay -->
+    <FrameLayout
+        android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_marginTop="16dp"
-        android:paddingHorizontal="20dp"
-        app:layout_constraintBottom_toTopOf="@id/row_times"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHeight_min="140dp"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/tv_total" />
+        android:layout_marginTop="12dp"
+        android:layout_weight="1"
+        android:minHeight="140dp">
 
-    <!-- Start / End timestamps below the waveform -->
-    <TextView
-        android:id="@+id/tv_start"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="24dp"
-        android:fontFamily="monospace"
-        android:textColor="@color/handle"
-        android:textSize="12sp"
-        app:layout_constraintBottom_toBottomOf="@id/row_times"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="@id/row_times" />
+        <com.example.audiotrimcrop.WaveformView
+            android:id="@+id/waveform"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:paddingLeft="20dp"
+            android:paddingRight="20dp" />
 
-    <TextView
-        android:id="@+id/tv_end"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginEnd="24dp"
-        android:fontFamily="monospace"
-        android:textColor="@color/handle"
-        android:textSize="12sp"
-        app:layout_constraintBottom_toBottomOf="@id/row_times"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="@id/row_times" />
+        <LinearLayout
+            android:id="@+id/loading_overlay"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:visibility="visible">
 
-    <Space
-        android:id="@+id/row_times"
+            <ProgressBar
+                android:id="@+id/pb_load"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:indeterminateTint="@color/accent" />
+
+            <TextView
+                android:id="@+id/tv_hint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/analyzing"
+                android:textColor="@color/text_dim"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- Start / End timestamps -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="28dp"
-        app:layout_constraintBottom_toTopOf="@id/tv_sel_len"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/waveform" />
+        android:orientation="horizontal"
+        android:paddingLeft="24dp"
+        android:paddingRight="24dp">
+
+        <TextView
+            android:id="@+id/tv_start"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical"
+            android:layout_weight="1"
+            android:fontFamily="monospace"
+            android:textColor="@color/handle"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/tv_end"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical"
+            android:layout_weight="1"
+            android:gravity="end"
+            android:fontFamily="monospace"
+            android:textColor="@color/handle"
+            android:textSize="12sp" />
+    </LinearLayout>
 
     <!-- Selection length -->
     <TextView
         android:id="@+id/tv_sel_len"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="8dp"
         android:textColor="@color/text_dim"
-        android:textSize="13sp"
-        app:layout_constraintBottom_toTopOf="@id/btn_play"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/row_times" />
+        android:textSize="13sp" />
 
-    <!-- Play/pause -->
+    <!-- Play / Pause -->
     <ImageButton
         android:id="@+id/btn_play"
         android:layout_width="60dp"
         android:layout_height="60dp"
-        android:layout_marginBottom="16dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="12dp"
         android:background="@drawable/bg_circle"
         android:contentDescription="@string/play_pause"
         android:src="@android:drawable/ic_media_play"
-        android:tint="@color/white"
-        app:layout_constraintBottom_toTopOf="@id/pb_export"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/tv_sel_len" />
+        android:tint="@color/white" />
 
     <!-- Export progress bar -->
     <ProgressBar
         android:id="@+id/pb_export"
-        style="@style/Widget.AppCompat.ProgressBar.Horizontal"
-        android:layout_width="0dp"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
         android:layout_height="6dp"
-        android:layout_marginHorizontal="24dp"
-        android:layout_marginBottom="10dp"
+        android:layout_marginLeft="24dp"
+        android:layout_marginRight="24dp"
+        android:layout_marginBottom="8dp"
         android:max="100"
         android:progressTint="@color/accent"
-        android:visibility="gone"
-        app:layout_constraintBottom_toTopOf="@id/btn_export"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/btn_play" />
+        android:visibility="gone" />
 
     <!-- Export button -->
     <Button
         android:id="@+id/btn_export"
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="52dp"
-        android:layout_marginHorizontal="32dp"
+        android:layout_marginLeft="32dp"
+        android:layout_marginRight="32dp"
         android:layout_marginBottom="24dp"
         android:background="@drawable/bg_btn"
         android:text="@string/export"
         android:textColor="@color/white"
         android:textSize="16sp"
-        android:textStyle="bold"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/pb_export" />
+        android:textStyle="bold" />
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+</LinearLayout>
