@@ -21,7 +21,7 @@ class MainActivity : Activity() {
             return
         }
 
-        findViewById<Button>(R.id.btn_open_file).setOnClickListener {
+        findViewById<Button>(R.id.btn_open_file)!!.setOnClickListener {
             checkPermissionAndPick()
         }
     }

@@ -82,21 +82,21 @@ class TrimActivity : Activity() {
     }
 
     private fun bindViews() {
-        val btnBack = findViewById<ImageButton>(R.id.btn_back)
+        val btnBack = findViewById<ImageButton>(R.id.btn_back)!!
         btnBack.setOnClickListener { finish() }
 
-        waveform      = findViewById(R.id.waveform)
-        btnPlay       = findViewById(R.id.btn_play)
-        btnExport     = findViewById(R.id.btn_export)
-        tvStart       = findViewById(R.id.tv_start)
-        tvEnd         = findViewById(R.id.tv_end)
-        tvTotal       = findViewById(R.id.tv_total)
-        tvFileName    = findViewById(R.id.tv_filename)
-        tvSelLen      = findViewById(R.id.tv_sel_len)
-        tvHint        = findViewById(R.id.tv_hint)
-        pbLoad        = findViewById(R.id.pb_load)
-        pbExport      = findViewById(R.id.pb_export)
-        loadingOverlay = findViewById(R.id.loading_overlay)
+        waveform      = findViewById<WaveformView>(R.id.waveform)!!
+        btnPlay       = findViewById<ImageButton>(R.id.btn_play)!!
+        btnExport     = findViewById<Button>(R.id.btn_export)!!
+        tvStart       = findViewById<TextView>(R.id.tv_start)!!
+        tvEnd         = findViewById<TextView>(R.id.tv_end)!!
+        tvTotal       = findViewById<TextView>(R.id.tv_total)!!
+        tvFileName    = findViewById<TextView>(R.id.tv_filename)!!
+        tvSelLen      = findViewById<TextView>(R.id.tv_sel_len)!!
+        tvHint        = findViewById<TextView>(R.id.tv_hint)!!
+        pbLoad        = findViewById<ProgressBar>(R.id.pb_load)!!
+        pbExport      = findViewById<ProgressBar>(R.id.pb_export)!!
+        loadingOverlay = findViewById<View>(R.id.loading_overlay)!!
 
         btnPlay.isEnabled   = false
         btnExport.isEnabled = false
