@@ -89,6 +89,20 @@
         </LinearLayout>
     </FrameLayout>
 
+    <!-- Playback / seek position bar -->
+    <SeekBar
+        android:id="@+id/seek_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginLeft="20dp"
+        android:layout_marginRight="20dp"
+        android:layout_marginTop="6dp"
+        android:layout_marginBottom="2dp"
+        android:max="10000"
+        android:progressTint="@color/accent"
+        android:thumbTint="@color/accent"
+        android:enabled="false" />
+
     <!-- Start / End timestamps -->
     <LinearLayout
         android:layout_width="match_parent"

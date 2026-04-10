@@ -12,12 +12,9 @@ import kotlin.math.max
 
 /**
  * Renders an audio waveform and exposes two draggable handles for selecting
- * a trim range. Also draws a playback-position indicator.
+ * a trim range. Also draws a playback-position / seek-cursor indicator.
  *
- * Usage:
- *   waveformView.setWaveformData(amplitudeFloatArray, durationMs)
- *   waveformView.onSelectionChanged = { start, end -> ... }
- *   waveformView.playbackPositionMs = currentMs   // from Handler loop
+ * Tap anywhere NOT on a handle to move the seek cursor.
  */
 class WaveformView @JvmOverloads constructor(
     ctx: Context, attrs: AttributeSet? = null, defStyle: Int = 0
@@ -34,10 +31,14 @@ class WaveformView @JvmOverloads constructor(
     var endMs: Long = 0L
         private set
 
+    /** Current playback position or seek cursor. -1 = hidden. */
     var playbackPositionMs: Long = -1L
         set(v) { field = v; invalidate() }
 
     var onSelectionChanged: ((Long, Long) -> Unit)? = null
+
+    /** Called when the user taps the waveform (not on a handle) to seek. */
+    var onSeekTo: ((Long) -> Unit)? = null
 
     // ── Private state ─────────────────────────────────────────────────────────
 
@@ -45,6 +46,7 @@ class WaveformView @JvmOverloads constructor(
 
     private enum class Drag { NONE, START, END }
     private var drag = Drag.NONE
+    private var tapDownX = 0f
 
     private val dp = ctx.resources.displayMetrics.density
     private val handleTouchSlop = dp * 28f
@@ -78,6 +80,10 @@ class WaveformView @JvmOverloads constructor(
         style = Paint.Style.STROKE
         strokeWidth = dp * 2f
     }
+    private val paintCursorHead = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFFFFFFF.toInt()
+        style = Paint.Style.FILL
+    }
 
     // ── Public API ────────────────────────────────────────────────────────────
 
@@ -86,7 +92,7 @@ class WaveformView @JvmOverloads constructor(
         durationMs = durMs
         startMs    = 0L
         endMs      = durMs
-        playbackPositionMs = -1L
+        playbackPositionMs = 0L
         invalidate()
     }
 
@@ -150,10 +156,12 @@ class WaveformView @JvmOverloads constructor(
         canvas.drawLine(endX, top, endX, bot, paintHandleLine)
         canvas.drawCircle(endX, cx, handleRadius, paintHandle)
 
-        // Playback position
+        // Playback / seek cursor
         if (playbackPositionMs >= 0L) {
             val px = msToX(playbackPositionMs)
             canvas.drawLine(px, top, px, bot, paintPlayback)
+            // small triangle head at top
+            canvas.drawCircle(px, top + dp * 5f, dp * 5f, paintCursorHead)
         }
     }
 
@@ -173,11 +181,12 @@ class WaveformView @JvmOverloads constructor(
                 }
                 if (drag != Drag.NONE) {
                     parent.requestDisallowInterceptTouchEvent(true)
-                    return true
                 }
+                tapDownX = x
+                return true  // always consume to receive ACTION_UP
             }
             MotionEvent.ACTION_MOVE -> {
-                if (drag == Drag.NONE) return false
+                if (drag == Drag.NONE) return true
                 val ms = xToMs(x)
                 when (drag) {
                     Drag.START -> startMs = ms.coerceIn(0, endMs - MIN_SPAN_MS)
@@ -188,12 +197,22 @@ class WaveformView @JvmOverloads constructor(
                 invalidate()
                 return true
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+            MotionEvent.ACTION_UP -> {
+                parent.requestDisallowInterceptTouchEvent(false)
+                if (drag == Drag.NONE && abs(x - tapDownX) < handleTouchSlop) {
+                    // Tap-to-seek: move cursor to tapped position
+                    val ms = xToMs(x).coerceIn(0L, durationMs)
+                    playbackPositionMs = ms
+                    onSeekTo?.invoke(ms)
+                }
+                drag = Drag.NONE
+            }
+            MotionEvent.ACTION_CANCEL -> {
                 parent.requestDisallowInterceptTouchEvent(false)
                 drag = Drag.NONE
             }
         }
-        return false
+        return true
     }
 
     companion object {

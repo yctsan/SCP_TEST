@@ -8,6 +8,8 @@ import android.media.MediaFormat
 import android.media.MediaMuxer
 import android.net.Uri
 import java.io.File
+import java.io.FileDescriptor
+import java.io.FileOutputStream
 import java.nio.ByteBuffer
 
 /**
@@ -22,10 +24,25 @@ import java.nio.ByteBuffer
  */
 object AudioTrimmer {
 
+    /** Trim to a [File] (convenience wrapper). */
     fun trim(
         context: Context,
         inputUri: Uri,
         outputFile: File,
+        startUs: Long,
+        endUs: Long,
+        onProgress: ((Int) -> Unit)? = null
+    ): Boolean {
+        return FileOutputStream(outputFile).use { fos ->
+            trim(context, inputUri, fos.fd, startUs, endUs, onProgress)
+        }
+    }
+
+    /** Trim, writing output to an already-opened [FileDescriptor] (e.g. from ACTION_CREATE_DOCUMENT). */
+    fun trim(
+        context: Context,
+        inputUri: Uri,
+        outputFd: FileDescriptor,
         startUs: Long,
         endUs: Long,
         onProgress: ((Int) -> Unit)? = null
@@ -51,10 +68,10 @@ object AudioTrimmer {
         val isAac = mime == MediaFormat.MIMETYPE_AUDIO_AAC || mime == "audio/mp4a-latm"
 
         return if (isAac) {
-            directCopy(extractor, trackIdx, fmt, outputFile, startUs, endUs, onProgress)
+            directCopy(extractor, trackIdx, fmt, outputFd, startUs, endUs, onProgress)
         } else {
             extractor.release()
-            transcode(context, inputUri, outputFile, startUs, endUs, onProgress)
+            transcode(context, inputUri, outputFd, startUs, endUs, onProgress)
         }
     }
 
@@ -64,7 +81,7 @@ object AudioTrimmer {
         extractor: MediaExtractor,
         trackIdx: Int,
         fmt: MediaFormat,
-        out: File,
+        out: FileDescriptor,
         startUs: Long,
         endUs: Long,
         onProgress: ((Int) -> Unit)?
@@ -72,7 +89,7 @@ object AudioTrimmer {
         extractor.selectTrack(trackIdx)
         extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
 
-        val muxer = MediaMuxer(out.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val muxer = MediaMuxer(out, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
         val muxTrack = muxer.addTrack(fmt)
         muxer.start()
 
@@ -110,7 +127,7 @@ object AudioTrimmer {
     private fun transcode(
         context: Context,
         inputUri: Uri,
-        out: File,
+        out: FileDescriptor,
         startUs: Long,
         endUs: Long,
         onProgress: ((Int) -> Unit)?
@@ -215,7 +232,7 @@ object AudioTrimmer {
         encoder.configure(encoderFmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         encoder.start()
 
-        val muxer = MediaMuxer(out.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val muxer = MediaMuxer(out, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
         var muxTrack = -1; var muxerStarted = false
 
         // Flatten PCM to a single buffer
