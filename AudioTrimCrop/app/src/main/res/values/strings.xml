@@ -6,12 +6,14 @@
     <string name="supported">Supports MP3 · M4A · AAC</string>
     <string name="analyzing">Analyzing audio…</string>
     <string name="play_pause">Play / Pause</string>
+    <string name="rewind">Rewind 10 seconds</string>
+    <string name="forward">Forward 10 seconds</string>
     <string name="export">Export Trimmed Audio</string>
+    <string name="choose_codec">Choose output format</string>
     <string name="sel_len">Selection: %1$s</string>
     <string name="export_done">Export Complete</string>
-    <string name="export_saved">Saved as %1$s</string>
-    <string name="mp3_note">MP3 was re-encoded to AAC/M4A (lossless direct copy is not possible for MP3).</string>
-<string name="err_no_file">No audio file provided.</string>
+    <string name="export_saved">Saved as %1$s\nFormat: %2$s</string>
+    <string name="err_no_file">No audio file provided.</string>
     <string name="err_load">Could not load this audio file.</string>
     <string name="err_playback">Playback error.</string>
     <string name="err_too_short">Selection must be at least 0.5 seconds.</string>

@@ -16,13 +16,46 @@ import java.nio.ByteBuffer
  * Trims audio files to [startUs]..[endUs] (microseconds).
  *
  * Strategy:
- *  - AAC/M4A  → direct frame copy via MediaExtractor + MediaMuxer (lossless, fast)
- *  - MP3/other → decode to PCM with MediaCodec, re-encode to AAC, mux to M4A
- *
- * Output is always an .m4a container. MP3 inputs are re-encoded (slight quality
- * difference is unavoidable without a native MP3 muxer).
+ *  - AAC input + AAC output → direct frame copy (lossless, fast)
+ *  - Everything else        → decode to PCM → re-encode with chosen codec
  */
 object AudioTrimmer {
+
+    /** Supported output codecs/formats. */
+    enum class OutputCodec(
+        val encoderMime: String,
+        val bitRate: Int,
+        val muxerFormat: Int,
+        val extension: String,
+        val label: String,
+        val pickerMime: String
+    ) {
+        AAC_192(
+            MediaFormat.MIMETYPE_AUDIO_AAC, 192_000,
+            MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4, "m4a",
+            "AAC 192 kbps · M4A (best quality)", "audio/mp4"
+        ),
+        AAC_128(
+            MediaFormat.MIMETYPE_AUDIO_AAC, 128_000,
+            MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4, "m4a",
+            "AAC 128 kbps · M4A", "audio/mp4"
+        ),
+        AAC_64(
+            MediaFormat.MIMETYPE_AUDIO_AAC, 64_000,
+            MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4, "m4a",
+            "AAC 64 kbps · M4A (smaller file)", "audio/mp4"
+        ),
+        OPUS_128(
+            "audio/opus", 128_000,
+            MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG, "ogg",
+            "Opus 128 kbps · OGG (excellent quality)", "audio/ogg"
+        ),
+        OPUS_64(
+            "audio/opus", 64_000,
+            MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG, "ogg",
+            "Opus 64 kbps · OGG (smallest file)", "audio/ogg"
+        ),
+    }
 
     /** Trim to a [File] (convenience wrapper). */
     fun trim(
@@ -31,10 +64,11 @@ object AudioTrimmer {
         outputFile: File,
         startUs: Long,
         endUs: Long,
+        outputCodec: OutputCodec = OutputCodec.AAC_192,
         onProgress: ((Int) -> Unit)? = null
     ): Boolean {
         return FileOutputStream(outputFile).use { fos ->
-            trim(context, inputUri, fos.fd, startUs, endUs, onProgress)
+            trim(context, inputUri, fos.fd, startUs, endUs, outputCodec, onProgress)
         }
     }
 
@@ -45,6 +79,7 @@ object AudioTrimmer {
         outputFd: FileDescriptor,
         startUs: Long,
         endUs: Long,
+        outputCodec: OutputCodec = OutputCodec.AAC_192,
         onProgress: ((Int) -> Unit)? = null
     ): Boolean {
         val extractor = MediaExtractor()
@@ -64,18 +99,20 @@ object AudioTrimmer {
         }
         if (trackIdx < 0 || fmt == null) { extractor.release(); return false }
 
-        val mime = fmt.getString(MediaFormat.KEY_MIME)!!
-        val isAac = mime == MediaFormat.MIMETYPE_AUDIO_AAC || mime == "audio/mp4a-latm"
+        val inputMime = fmt.getString(MediaFormat.KEY_MIME)!!
+        val inputIsAac = inputMime == MediaFormat.MIMETYPE_AUDIO_AAC || inputMime == "audio/mp4a-latm"
+        val outputIsAac = outputCodec.encoderMime == MediaFormat.MIMETYPE_AUDIO_AAC
 
-        return if (isAac) {
+        // Direct copy only when both input and output are AAC
+        return if (inputIsAac && outputIsAac) {
             directCopy(extractor, trackIdx, fmt, outputFd, startUs, endUs, onProgress)
         } else {
             extractor.release()
-            transcode(context, inputUri, outputFd, startUs, endUs, onProgress)
+            transcode(context, inputUri, outputFd, startUs, endUs, outputCodec, onProgress)
         }
     }
 
-    // ── Direct copy (AAC / M4A) ──────────────────────────────────────────────
+    // ── Direct copy (AAC → AAC, lossless) ────────────────────────────────────
 
     private fun directCopy(
         extractor: MediaExtractor,
@@ -122,7 +159,7 @@ object AudioTrimmer {
         return true
     }
 
-    // ── Transcode (MP3 → decode PCM → encode AAC → M4A) ─────────────────────
+    // ── Transcode (decode PCM → encode with chosen codec) ────────────────────
 
     private fun transcode(
         context: Context,
@@ -130,6 +167,7 @@ object AudioTrimmer {
         out: FileDescriptor,
         startUs: Long,
         endUs: Long,
+        outputCodec: OutputCodec,
         onProgress: ((Int) -> Unit)?
     ): Boolean {
         // ── Decode phase ──────────────────────────────────────────────────────
@@ -158,7 +196,6 @@ object AudioTrimmer {
         var channels = if (fmt.containsKey(MediaFormat.KEY_CHANNEL_COUNT))
             fmt.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
 
-        // Collect PCM chunks only for the requested range
         data class Chunk(val data: ByteArray, val ptsUs: Long)
         val pcmChunks = mutableListOf<Chunk>()
         var inputDone = false; var outputDone = false
@@ -171,15 +208,13 @@ object AudioTrimmer {
                 if (idx >= 0) {
                     val pts = extractor.sampleTime
                     if (pts < 0 || pts > endUs) {
-                        decoder.queueInputBuffer(idx, 0, 0, 0,
-                            MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                        decoder.queueInputBuffer(idx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                         inputDone = true
                     } else {
                         val b = decoder.getInputBuffer(idx)!!
                         val n = extractor.readSampleData(b, 0)
                         if (n < 0) {
-                            decoder.queueInputBuffer(idx, 0, 0, 0,
-                                MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                            decoder.queueInputBuffer(idx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                             inputDone = true
                         } else {
                             decoder.queueInputBuffer(idx, 0, n, pts, 0)
@@ -192,13 +227,11 @@ object AudioTrimmer {
             when {
                 outIdx >= 0 -> {
                     val ob = decoder.getOutputBuffer(outIdx)
-                    if (ob != null && info.size > 0 &&
-                        info.presentationTimeUs >= startUs) {
+                    if (ob != null && info.size > 0 && info.presentationTimeUs >= startUs) {
                         val d = ByteArray(info.size); ob.get(d)
                         pcmChunks.add(Chunk(d, info.presentationTimeUs - startUs))
                         onProgress?.invoke(
-                            ((info.presentationTimeUs - startUs) * 49 / span)
-                                .toInt().coerceIn(0, 49)
+                            ((info.presentationTimeUs - startUs) * 49 / span).toInt().coerceIn(0, 49)
                         )
                     }
                     decoder.releaseOutputBuffer(outIdx, false)
@@ -221,28 +254,30 @@ object AudioTrimmer {
         if (pcmChunks.isEmpty()) return false
 
         // ── Encode phase ──────────────────────────────────────────────────────
-        val encoderFmt = MediaFormat.createAudioFormat(
-            MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, channels
-        ).apply {
-            setInteger(MediaFormat.KEY_BIT_RATE, 192_000)
-            setInteger(MediaFormat.KEY_AAC_PROFILE,
-                MediaCodecInfo.CodecProfileLevel.AACObjectLC)
-        }
-        val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
+        val encoderFmt = MediaFormat.createAudioFormat(outputCodec.encoderMime, sampleRate, channels)
+            .apply {
+                setInteger(MediaFormat.KEY_BIT_RATE, outputCodec.bitRate)
+                if (outputCodec.encoderMime == MediaFormat.MIMETYPE_AUDIO_AAC) {
+                    setInteger(MediaFormat.KEY_AAC_PROFILE,
+                        MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+                }
+            }
+
+        val encoder = MediaCodec.createEncoderByType(outputCodec.encoderMime)
         encoder.configure(encoderFmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         encoder.start()
 
-        val muxer = MediaMuxer(out, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val muxer = MediaMuxer(out, outputCodec.muxerFormat)
         var muxTrack = -1; var muxerStarted = false
 
-        // Flatten PCM to a single buffer
         val totalBytes = pcmChunks.sumOf { it.data.size }
         val allPcm = ByteArray(totalBytes)
         var wp = 0
         for (c in pcmChunks) { c.data.copyInto(allPcm, wp); wp += c.data.size }
         pcmChunks.clear()
 
-        val frameBytes = 1024 * channels * 2   // AAC frame = 1024 PCM samples
+        // AAC frames are 1024 PCM samples; Opus is flexible but we use the same chunking
+        val frameBytes = 1024 * channels * 2
         var readPos = 0
         var encInputDone = false; var encOutputDone = false
         val encInfo = MediaCodec.BufferInfo()
@@ -252,8 +287,7 @@ object AudioTrimmer {
                 val idx = encoder.dequeueInputBuffer(10_000L)
                 if (idx >= 0) {
                     if (readPos >= allPcm.size) {
-                        encoder.queueInputBuffer(idx, 0, 0, 0,
-                            MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                        encoder.queueInputBuffer(idx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                         encInputDone = true
                     } else {
                         val toWrite = minOf(frameBytes, allPcm.size - readPos)
@@ -273,7 +307,10 @@ object AudioTrimmer {
                 outIdx >= 0 -> {
                     val ob = encoder.getOutputBuffer(outIdx)
                     val isConfig = encInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
-                    if (muxerStarted && ob != null && encInfo.size > 0 && !isConfig)
+                    // AAC codec config is embedded in the M4A container, not as a sample.
+                    // Opus codec config (ID header) is needed in OGG — include it.
+                    val skip = isConfig && (outputCodec.encoderMime == MediaFormat.MIMETYPE_AUDIO_AAC)
+                    if (muxerStarted && ob != null && encInfo.size > 0 && !skip)
                         muxer.writeSampleData(muxTrack, ob, encInfo)
                     encoder.releaseOutputBuffer(outIdx, false)
                     if (encInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0)

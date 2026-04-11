@@ -6,6 +6,7 @@ import android.content.Intent
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -34,7 +35,9 @@ class TrimActivity : Activity() {
     // ── Views ─────────────────────────────────────────────────────────────────
     private lateinit var waveform: WaveformView
     private lateinit var seekBar: SeekBar
+    private lateinit var btnRewind: ImageButton
     private lateinit var btnPlay: ImageButton
+    private lateinit var btnForward: ImageButton
     private lateinit var btnExport: Button
     private lateinit var tvStart: TextView
     private lateinit var tvEnd: TextView
@@ -52,6 +55,9 @@ class TrimActivity : Activity() {
     private var playing = false
     private var isMp3 = false
 
+    // Codec chosen by the user before the file picker opens
+    private var pendingCodecOption: CodecOption? = null
+
     private val handler = Handler(Looper.getMainLooper())
     private val tickRunnable = object : Runnable {
         override fun run() {
@@ -65,6 +71,28 @@ class TrimActivity : Activity() {
             } catch (_: IllegalStateException) { return }
             handler.postDelayed(this, 40)
         }
+    }
+
+    // ── Codec options ─────────────────────────────────────────────────────────
+
+    private data class CodecOption(
+        val codec: AudioTrimmer.OutputCodec,
+        val label: String = codec.label,
+        val pickerMime: String = codec.pickerMime
+    )
+
+    private fun buildCodecOptions(): List<CodecOption> {
+        val opts = mutableListOf(
+            CodecOption(AudioTrimmer.OutputCodec.AAC_192),
+            CodecOption(AudioTrimmer.OutputCodec.AAC_128),
+            CodecOption(AudioTrimmer.OutputCodec.AAC_64),
+        )
+        // Opus encoding requires Android 10+ (API 29)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            opts += CodecOption(AudioTrimmer.OutputCodec.OPUS_128)
+            opts += CodecOption(AudioTrimmer.OutputCodec.OPUS_64)
+        }
+        return opts
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -89,7 +117,9 @@ class TrimActivity : Activity() {
 
         waveform       = findViewById<WaveformView>(R.id.waveform)!!
         seekBar        = findViewById<SeekBar>(R.id.seek_bar)!!
+        btnRewind      = findViewById<ImageButton>(R.id.btn_rewind)!!
         btnPlay        = findViewById<ImageButton>(R.id.btn_play)!!
+        btnForward     = findViewById<ImageButton>(R.id.btn_forward)!!
         btnExport      = findViewById<Button>(R.id.btn_export)!!
         tvStart        = findViewById<TextView>(R.id.tv_start)!!
         tvEnd          = findViewById<TextView>(R.id.tv_end)!!
@@ -101,15 +131,15 @@ class TrimActivity : Activity() {
         pbExport       = findViewById<ProgressBar>(R.id.pb_export)!!
         loadingOverlay = findViewById<View>(R.id.loading_overlay)!!
 
-        btnPlay.isEnabled   = false
+        setPlaybackControlsEnabled(false)
         btnExport.isEnabled = false
         seekBar.isEnabled   = false
         seekBar.max         = SEEK_MAX
 
-        btnPlay.setOnClickListener {
-            if (playing) pausePlayback() else startPlayback()
-        }
-        btnExport.setOnClickListener { exportAudio() }
+        btnRewind.setOnClickListener  { seekBy(-SKIP_MS) }
+        btnPlay.setOnClickListener    { if (playing) pausePlayback() else startPlayback() }
+        btnForward.setOnClickListener { seekBy(+SKIP_MS) }
+        btnExport.setOnClickListener  { exportAudio() }
 
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
@@ -134,7 +164,6 @@ class TrimActivity : Activity() {
         waveform.onSelectionChanged = { s, e ->
             updateLabels(s, e)
             if (playing) pausePlayback()
-            // clamp cursor to the selection
             val cur = waveform.playbackPositionMs
             if (cur < s) {
                 waveform.playbackPositionMs = s; updateSeekBar(s)
@@ -161,9 +190,9 @@ class TrimActivity : Activity() {
     private fun loadWaveform() {
         val uri = audioUri ?: return
         loadingOverlay.visibility = View.VISIBLE
-        btnPlay.isEnabled          = false
-        btnExport.isEnabled        = false
-        seekBar.isEnabled          = false
+        setPlaybackControlsEnabled(false)
+        btnExport.isEnabled = false
+        seekBar.isEnabled   = false
 
         scope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -178,8 +207,8 @@ class TrimActivity : Activity() {
                 updateLabels(0L, dur)
                 seekBar.progress = 0
                 seekBar.isEnabled   = true
-                btnPlay.isEnabled   = true
                 btnExport.isEnabled = true
+                setPlaybackControlsEnabled(true)
             } else {
                 Toast.makeText(this@TrimActivity, R.string.err_load, Toast.LENGTH_LONG).show()
             }
@@ -197,9 +226,7 @@ class TrimActivity : Activity() {
                     prepare()
                 }
             }
-            // Start from current cursor (supports both fresh start and resume-from-pause)
-            val startPos = waveform.playbackPositionMs
-                .coerceIn(waveform.startMs, waveform.endMs)
+            val startPos = waveform.playbackPositionMs.coerceIn(waveform.startMs, waveform.endMs)
             player!!.seekTo(startPos.toInt())
             player!!.start()
             playing = true
@@ -210,7 +237,7 @@ class TrimActivity : Activity() {
         }
     }
 
-    /** Pause: saves current position so resume continues from the same spot. */
+    /** Pause: cursor stays at current position so resume continues from the same spot. */
     private fun pausePlayback() {
         playing = false
         handler.removeCallbacks(tickRunnable)
@@ -223,7 +250,7 @@ class TrimActivity : Activity() {
         btnPlay.setImageResource(android.R.drawable.ic_media_play)
     }
 
-    /** Full stop (called when playback reaches the end of selection). */
+    /** Full stop called when end of selection is reached. */
     private fun stopPlayback() {
         playing = false
         handler.removeCallbacks(tickRunnable)
@@ -236,6 +263,18 @@ class TrimActivity : Activity() {
         btnPlay.setImageResource(android.R.drawable.ic_media_play)
     }
 
+    /** Jump forward or backward by [deltaMs] milliseconds (clamped to [0, duration]). */
+    private fun seekBy(deltaMs: Long) {
+        val dur = waveform.durationMs
+        if (dur == 0L) return
+        val newMs = (waveform.playbackPositionMs + deltaMs).coerceIn(0L, dur)
+        waveform.playbackPositionMs = newMs
+        updateSeekBar(newMs)
+        if (playing) {
+            try { player?.seekTo(newMs.toInt()) } catch (_: Exception) {}
+        }
+    }
+
     // ── Export ────────────────────────────────────────────────────────────────
 
     private fun exportAudio() {
@@ -244,28 +283,36 @@ class TrimActivity : Activity() {
         }
         if (playing) pausePlayback()
 
-        // Build a sensible default filename
+        val options = buildCodecOptions()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.choose_codec)
+            .setItems(options.map { it.label }.toTypedArray()) { _, which ->
+                launchFilePicker(options[which])
+            }
+            .show()
+    }
+
+    private fun launchFilePicker(option: CodecOption) {
+        pendingCodecOption = option
         val base = getFileName(audioUri!!).substringBeforeLast(".")
         val ts   = SimpleDateFormat("HHmmss", Locale.US).format(Date())
-        val defaultName = "${base}_trim_$ts.m4a"
-
-        // Let the user pick save location + name
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
-            type = "audio/mp4"
-            putExtra(Intent.EXTRA_TITLE, defaultName)
+            type = option.pickerMime
+            putExtra(Intent.EXTRA_TITLE, "${base}_trim_$ts.${option.codec.extension}")
         }
         startActivityForResult(intent, REQ_SAVE_FILE)
     }
 
-    private fun performExport(saveUri: Uri) {
-        val inputUri = audioUri ?: return
+    private fun performExport(saveUri: Uri, option: CodecOption) {
+        val inputUri  = audioUri ?: return
         val trimStart = waveform.startMs * 1000L
         val trimEnd   = waveform.endMs   * 1000L
 
         releasePlayer()
+        setPlaybackControlsEnabled(false)
         btnExport.isEnabled = false
-        btnPlay.isEnabled   = false
+        seekBar.isEnabled   = false
         pbExport.visibility = View.VISIBLE
         pbExport.progress   = 0
 
@@ -275,30 +322,26 @@ class TrimActivity : Activity() {
                     contentResolver.openFileDescriptor(saveUri, "w")?.use { pfd ->
                         AudioTrimmer.trim(
                             this@TrimActivity, inputUri, pfd.fileDescriptor,
-                            trimStart, trimEnd
+                            trimStart, trimEnd, option.codec
                         ) { p -> handler.post { pbExport.progress = p } }
                     } ?: false
                 } catch (_: Exception) { false }
             }
 
             pbExport.visibility = View.GONE
+            setPlaybackControlsEnabled(true)
             btnExport.isEnabled = true
-            btnPlay.isEnabled   = true
+            seekBar.isEnabled   = true
 
-            if (ok) {
-                showSuccessDialog(saveUri)
-            } else {
-                Toast.makeText(this@TrimActivity, R.string.err_export, Toast.LENGTH_LONG).show()
-            }
+            if (ok) showSuccessDialog(saveUri, option)
+            else Toast.makeText(this@TrimActivity, R.string.err_export, Toast.LENGTH_LONG).show()
         }
     }
 
-    private fun showSuccessDialog(saveUri: Uri) {
-        val name = getFileName(saveUri)
-        val note = if (isMp3) "\n\n${getString(R.string.mp3_note)}" else ""
+    private fun showSuccessDialog(saveUri: Uri, option: CodecOption) {
         AlertDialog.Builder(this)
             .setTitle(R.string.export_done)
-            .setMessage(getString(R.string.export_saved, name) + note)
+            .setMessage(getString(R.string.export_saved, getFileName(saveUri), option.label))
             .setPositiveButton(android.R.string.ok, null)
             .show()
     }
@@ -306,11 +349,20 @@ class TrimActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQ_SAVE_FILE && resultCode == RESULT_OK) {
-            data?.data?.let { performExport(it) }
+            val uri    = data?.data ?: return
+            val option = pendingCodecOption ?: return
+            pendingCodecOption = null
+            performExport(uri, option)
         }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private fun setPlaybackControlsEnabled(enabled: Boolean) {
+        btnRewind.isEnabled  = enabled
+        btnPlay.isEnabled    = enabled
+        btnForward.isEnabled = enabled
+    }
 
     private fun updateLabels(s: Long, e: Long) {
         tvStart.text  = fmt(s)
@@ -369,5 +421,6 @@ class TrimActivity : Activity() {
     companion object {
         const val REQ_SAVE_FILE = 3
         private const val SEEK_MAX = 10_000
+        private const val SKIP_MS  = 10_000L   // 10 seconds
     }
 }
