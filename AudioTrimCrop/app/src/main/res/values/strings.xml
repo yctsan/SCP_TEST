@@ -18,5 +18,6 @@
     <string name="err_playback">Playback error.</string>
     <string name="err_too_short">Selection must be at least 0.5 seconds.</string>
     <string name="err_export">Export failed. Please try again.</string>
+    <string name="speed">Speed</string>
     <string name="permission_denied">Storage permission is required to read audio files.</string>
 </resources>

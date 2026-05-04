@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
+import android.media.PlaybackParams
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -48,12 +49,15 @@ class TrimActivity : Activity() {
     private lateinit var pbLoad: ProgressBar
     private lateinit var pbExport: ProgressBar
     private lateinit var loadingOverlay: View
+    private lateinit var seekSpeed: SeekBar
+    private lateinit var tvSpeed: TextView
 
     // ── Audio ─────────────────────────────────────────────────────────────────
     private var audioUri: Uri? = null
     private var player: MediaPlayer? = null
     private var playing = false
     private var isMp3 = false
+    private var playbackSpeed = 1.0f
 
     // Codec chosen by the user before the file picker opens
     private var pendingCodecOption: CodecOption? = null
@@ -130,11 +134,24 @@ class TrimActivity : Activity() {
         pbLoad         = findViewById<ProgressBar>(R.id.pb_load)!!
         pbExport       = findViewById<ProgressBar>(R.id.pb_export)!!
         loadingOverlay = findViewById<View>(R.id.loading_overlay)!!
+        seekSpeed      = findViewById<SeekBar>(R.id.seek_speed)!!
+        tvSpeed        = findViewById<TextView>(R.id.tv_speed)!!
 
         setPlaybackControlsEnabled(false)
-        btnExport.isEnabled = false
-        seekBar.isEnabled   = false
-        seekBar.max         = SEEK_MAX
+        btnExport.isEnabled  = false
+        seekBar.isEnabled    = false
+        seekBar.max          = SEEK_MAX
+        seekSpeed.isEnabled  = false
+
+        seekSpeed.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
+                playbackSpeed = (progress + 1) * 0.1f
+                tvSpeed.text = "%.1f×".format(playbackSpeed)
+                if (playing) applyPlaybackSpeed()
+            }
+            override fun onStartTrackingTouch(sb: SeekBar) {}
+            override fun onStopTrackingTouch(sb: SeekBar) {}
+        })
 
         btnRewind.setOnClickListener  { seekBy(-SKIP_MS) }
         btnPlay.setOnClickListener    { if (playing) pausePlayback() else startPlayback() }
@@ -229,6 +246,7 @@ class TrimActivity : Activity() {
             val startPos = waveform.playbackPositionMs.coerceIn(waveform.startMs, waveform.endMs)
             player!!.seekTo(startPos.toInt())
             player!!.start()
+            applyPlaybackSpeed()
             playing = true
             btnPlay.setImageResource(android.R.drawable.ic_media_pause)
             handler.post(tickRunnable)
@@ -261,6 +279,12 @@ class TrimActivity : Activity() {
         waveform.playbackPositionMs = waveform.startMs
         updateSeekBar(waveform.startMs)
         btnPlay.setImageResource(android.R.drawable.ic_media_play)
+    }
+
+    private fun applyPlaybackSpeed() {
+        try {
+            player?.playbackParams = PlaybackParams().setSpeed(playbackSpeed)
+        } catch (_: Exception) {}
     }
 
     /** Jump forward or backward by [deltaMs] milliseconds (clamped to [0, duration]). */
@@ -359,9 +383,10 @@ class TrimActivity : Activity() {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private fun setPlaybackControlsEnabled(enabled: Boolean) {
-        btnRewind.isEnabled  = enabled
-        btnPlay.isEnabled    = enabled
-        btnForward.isEnabled = enabled
+        btnRewind.isEnabled   = enabled
+        btnPlay.isEnabled     = enabled
+        btnForward.isEnabled  = enabled
+        seekSpeed.isEnabled   = enabled
     }
 
     private fun updateLabels(s: Long, e: Long) {
