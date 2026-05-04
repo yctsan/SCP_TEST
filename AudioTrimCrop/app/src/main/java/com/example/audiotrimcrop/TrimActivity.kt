@@ -325,7 +325,7 @@ class TrimActivity : Activity() {
                             trimStart, trimEnd, option.codec
                         ) { p -> handler.post { pbExport.progress = p } }
                     } ?: false
-                } catch (_: Exception) { false }
+                } catch (_: Throwable) { false }
             }
 
             pbExport.visibility = View.GONE
