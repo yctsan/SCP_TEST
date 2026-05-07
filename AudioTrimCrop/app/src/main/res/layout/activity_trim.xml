@@ -48,6 +48,16 @@
         android:textColor="@color/text_dim"
         android:textSize="12sp" />
 
+    <!-- Original file codec · bitrate · sample rate -->
+    <TextView
+        android:id="@+id/tv_file_info"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="2dp"
+        android:textColor="@color/accent"
+        android:textSize="12sp" />
+
     <!-- Waveform + loading overlay -->
     <FrameLayout
         android:layout_width="match_parent"

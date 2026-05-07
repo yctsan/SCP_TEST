@@ -3,6 +3,8 @@ package com.example.audiotrimcrop
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.media.MediaExtractor
+import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.media.PlaybackParams
@@ -15,6 +17,7 @@ import android.provider.OpenableColumns
 import android.view.View
 import android.widget.Button
 import android.widget.ImageButton
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.SeekBar
 import android.widget.TextView
@@ -52,6 +55,7 @@ class TrimActivity : Activity() {
     private lateinit var seekSpeed: SeekBar
     private lateinit var tvSpeed: TextView
     private lateinit var tvPlayTime: TextView
+    private lateinit var tvFileInfo: TextView
 
     // ── Audio ─────────────────────────────────────────────────────────────────
     private var audioUri: Uri? = null
@@ -59,6 +63,11 @@ class TrimActivity : Activity() {
     private var playing = false
     private var isMp3 = false
     private var playbackSpeed = 1.0f
+
+    // ── Source file info ──────────────────────────────────────────────────────
+    private var inputMime: String = ""
+    private var inputBitrate: Int = 0
+    private var inputSampleRate: Int = 0
 
     // Codec chosen by the user before the file picker opens
     private var pendingCodecOption: CodecOption? = null
@@ -140,6 +149,7 @@ class TrimActivity : Activity() {
         seekSpeed      = findViewById<SeekBar>(R.id.seek_speed)!!
         tvSpeed        = findViewById<TextView>(R.id.tv_speed)!!
         tvPlayTime     = findViewById<TextView>(R.id.tv_play_time)!!
+        tvFileInfo     = findViewById<TextView>(R.id.tv_file_info)!!
 
         setPlaybackControlsEnabled(false)
         btnExport.isEnabled  = false
@@ -204,8 +214,65 @@ class TrimActivity : Activity() {
                 val ms = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                     ?.toLongOrNull() ?: 0L
                 tvTotal.text = fmt(ms)
+                inputBitrate = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)
+                    ?.toIntOrNull() ?: 0
             }
         } catch (_: Exception) { tvTotal.text = "--:--" }
+
+        // Extract per-track codec info; overrides bitrate if track-level value available
+        try {
+            val extractor = MediaExtractor()
+            extractor.setDataSource(this, uri, null)
+            for (i in 0 until extractor.trackCount) {
+                val fmt = extractor.getTrackFormat(i)
+                val mime = fmt.getString(MediaFormat.KEY_MIME) ?: continue
+                if (!mime.startsWith("audio/")) continue
+                inputMime = mime
+                if (fmt.containsKey(MediaFormat.KEY_SAMPLE_RATE))
+                    inputSampleRate = fmt.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                if (fmt.containsKey(MediaFormat.KEY_BIT_RATE) && fmt.getInteger(MediaFormat.KEY_BIT_RATE) > 0)
+                    inputBitrate = fmt.getInteger(MediaFormat.KEY_BIT_RATE)
+                break
+            }
+            extractor.release()
+        } catch (_: Exception) {}
+
+        val codecName  = mimeToCodecName(inputMime)
+        val bitrateStr = formatBitrate(inputMime, inputBitrate)
+        val srStr      = formatSampleRate(inputSampleRate)
+        tvFileInfo.text = listOfNotNull(
+            codecName.ifEmpty { null },
+            bitrateStr.ifEmpty { null },
+            srStr.ifEmpty { null }
+        ).joinToString(" · ")
+    }
+
+    private fun mimeToCodecName(mime: String): String = when {
+        mime == MediaFormat.MIMETYPE_AUDIO_AAC || mime == "audio/mp4a-latm" -> "AAC"
+        mime == "audio/mpeg"    -> "MP3"
+        mime == "audio/flac"    -> "FLAC"
+        mime == "audio/raw"     -> "WAV / PCM"
+        mime == "audio/opus"    -> "Opus"
+        mime == "audio/vorbis"  -> "Vorbis"
+        mime == "audio/3gpp"    -> "AMR-NB"
+        mime == "audio/amr-wb"  -> "AMR-WB"
+        mime.startsWith("audio/") -> mime.removePrefix("audio/").uppercase()
+        else -> ""
+    }
+
+    private fun formatBitrate(mime: String, bitrate: Int): String = when {
+        mime == "audio/flac" || mime == "audio/raw" -> "Lossless"
+        bitrate > 0 -> "${bitrate / 1000} kbps"
+        else -> ""
+    }
+
+    private fun formatSampleRate(hz: Int): String = when (hz) {
+        8_000   -> "8 kHz";    11_025  -> "11.025 kHz"; 16_000  -> "16 kHz"
+        22_050  -> "22.05 kHz"; 24_000 -> "24 kHz";     32_000  -> "32 kHz"
+        44_100  -> "44.1 kHz"; 48_000  -> "48 kHz"
+        88_200  -> "88.2 kHz"; 96_000  -> "96 kHz"
+        176_400 -> "176.4 kHz"; 192_000 -> "192 kHz"
+        else -> if (hz > 0) "$hz Hz" else ""
     }
 
     private fun loadWaveform() {
@@ -315,12 +382,65 @@ class TrimActivity : Activity() {
         if (playing) pausePlayback()
 
         val options = buildCodecOptions()
-        AlertDialog.Builder(this)
-            .setTitle(R.string.choose_codec)
-            .setItems(options.map { it.label }.toTypedArray()) { _, which ->
-                launchFilePicker(options[which])
+        val dp = resources.displayMetrics.density
+
+        // Custom title view: dialog heading + original-file info
+        val titleView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((24 * dp).toInt(), (20 * dp).toInt(), (24 * dp).toInt(), (8 * dp).toInt())
+
+            addView(TextView(this@TrimActivity).apply {
+                text = getString(R.string.choose_codec)
+                textSize = 18f
+                setTextColor(0xFFFFFFFF.toInt())
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+            })
+
+            if (inputMime.isNotEmpty()) {
+                val codecName  = mimeToCodecName(inputMime)
+                val bitrateStr = formatBitrate(inputMime, inputBitrate)
+                val srStr      = formatSampleRate(inputSampleRate)
+                val infoLine   = listOfNotNull(
+                    "Original: $codecName",
+                    bitrateStr.ifEmpty { null },
+                    srStr.ifEmpty { null }
+                ).joinToString(" · ")
+
+                addView(TextView(this@TrimActivity).apply {
+                    text = infoLine
+                    textSize = 13f
+                    setTextColor(0xFFCCCCCC.toInt())
+                    setPadding(0, (8 * dp).toInt(), 0, 0)
+                })
+
+                val hasMatch = options.any { isMatchingCodec(it.codec) }
+                if (hasMatch) {
+                    addView(TextView(this@TrimActivity).apply {
+                        text = "★  Same format = faster (no re-encoding)"
+                        textSize = 12f
+                        setTextColor(0xFF00BCD4.toInt())
+                        setPadding(0, (4 * dp).toInt(), 0, 0)
+                    })
+                }
             }
+        }
+
+        // Label matching options with ★ in the list
+        val itemLabels = options.map { opt ->
+            if (isMatchingCodec(opt.codec)) "${opt.label}  ★" else opt.label
+        }.toTypedArray()
+
+        AlertDialog.Builder(this)
+            .setCustomTitle(titleView)
+            .setItems(itemLabels) { _, which -> launchFilePicker(options[which]) }
             .show()
+    }
+
+    private fun isMatchingCodec(codec: AudioTrimmer.OutputCodec): Boolean {
+        if (inputMime.isEmpty()) return false
+        val inputIsAac = inputMime == MediaFormat.MIMETYPE_AUDIO_AAC || inputMime == "audio/mp4a-latm"
+        return if (inputIsAac) codec.encoderMime == MediaFormat.MIMETYPE_AUDIO_AAC
+               else codec.encoderMime == inputMime
     }
 
     private fun launchFilePicker(option: CodecOption) {
