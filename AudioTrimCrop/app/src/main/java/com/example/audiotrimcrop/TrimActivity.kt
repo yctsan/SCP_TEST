@@ -51,6 +51,7 @@ class TrimActivity : Activity() {
     private lateinit var loadingOverlay: View
     private lateinit var seekSpeed: SeekBar
     private lateinit var tvSpeed: TextView
+    private lateinit var tvPlayTime: TextView
 
     // ── Audio ─────────────────────────────────────────────────────────────────
     private var audioUri: Uri? = null
@@ -71,6 +72,7 @@ class TrimActivity : Activity() {
                 val pos = p.currentPosition.toLong()
                 waveform.playbackPositionMs = pos
                 updateSeekBar(pos)
+                tvPlayTime.text = "${fmt(pos)} / ${fmt(waveform.durationMs)}"
                 if (pos >= waveform.endMs) { stopPlayback(); return }
             } catch (_: IllegalStateException) { return }
             handler.postDelayed(this, 40)
@@ -96,6 +98,7 @@ class TrimActivity : Activity() {
             opts += CodecOption(AudioTrimmer.OutputCodec.OPUS_128)
             opts += CodecOption(AudioTrimmer.OutputCodec.OPUS_64)
         }
+        opts += CodecOption(AudioTrimmer.OutputCodec.FLAC_LOSSLESS)
         return opts
     }
 
@@ -136,6 +139,7 @@ class TrimActivity : Activity() {
         loadingOverlay = findViewById<View>(R.id.loading_overlay)!!
         seekSpeed      = findViewById<SeekBar>(R.id.seek_speed)!!
         tvSpeed        = findViewById<TextView>(R.id.tv_speed)!!
+        tvPlayTime     = findViewById<TextView>(R.id.tv_play_time)!!
 
         setPlaybackControlsEnabled(false)
         btnExport.isEnabled  = false
@@ -222,6 +226,7 @@ class TrimActivity : Activity() {
                 tvTotal.text = fmt(dur)
                 waveform.setWaveformData(amps, dur)
                 updateLabels(0L, dur)
+                tvPlayTime.text = "${fmt(0L)} / ${fmt(dur)}"
                 seekBar.progress = 0
                 seekBar.isEnabled   = true
                 btnExport.isEnabled = true
@@ -264,6 +269,7 @@ class TrimActivity : Activity() {
             player?.pause()
             waveform.playbackPositionMs = pos
             updateSeekBar(pos)
+            tvPlayTime.text = "${fmt(pos)} / ${fmt(waveform.durationMs)}"
         } catch (_: IllegalStateException) {}
         btnPlay.setImageResource(android.R.drawable.ic_media_play)
     }
@@ -278,6 +284,7 @@ class TrimActivity : Activity() {
         } catch (_: IllegalStateException) {}
         waveform.playbackPositionMs = waveform.startMs
         updateSeekBar(waveform.startMs)
+        tvPlayTime.text = "${fmt(waveform.startMs)} / ${fmt(waveform.durationMs)}"
         btnPlay.setImageResource(android.R.drawable.ic_media_play)
     }
 

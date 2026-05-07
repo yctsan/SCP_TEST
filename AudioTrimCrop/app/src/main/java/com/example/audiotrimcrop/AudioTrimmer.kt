@@ -60,6 +60,11 @@ object AudioTrimmer {
             MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG, "ogg",
             "Opus 64 kbps · OGG (smallest file)", "audio/ogg"
         ),
+        FLAC_LOSSLESS(
+            "audio/flac", 0,
+            MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG, "oga",
+            "FLAC Lossless · OGA (no quality loss)", "audio/ogg"
+        ),
     }
 
     /** Trim to a [File] (convenience wrapper). */
@@ -108,10 +113,14 @@ object AudioTrimmer {
         val inputIsAac = inputMime == MediaFormat.MIMETYPE_AUDIO_AAC || inputMime == "audio/mp4a-latm"
         val outputIsAac = outputCodec.encoderMime == MediaFormat.MIMETYPE_AUDIO_AAC
         val inputIsRaw = inputMime == "audio/raw"
+        // Direct bitstream copy when input and output use the same codec — preserves
+        // original quality and parameters with no decoding or resampling.
+        val sameCodec = (inputIsAac && outputIsAac) ||
+            (!inputIsRaw && inputMime == outputCodec.encoderMime)
 
         return when {
-            inputIsAac && outputIsAac ->
-                directCopy(extractor, trackIdx, fmt, outputFd, startUs, endUs, onProgress)
+            sameCodec ->
+                directCopy(extractor, trackIdx, fmt, outputFd, startUs, endUs, outputCodec, onProgress)
             inputIsRaw -> {
                 // WAV / raw PCM — no MediaCodec decoder exists for audio/raw; read samples directly
                 val sampleRate = if (fmt.containsKey(MediaFormat.KEY_SAMPLE_RATE))
@@ -139,12 +148,13 @@ object AudioTrimmer {
         out: FileDescriptor,
         startUs: Long,
         endUs: Long,
+        outputCodec: OutputCodec,
         onProgress: ((Int) -> Unit)?
     ): Boolean {
         extractor.selectTrack(trackIdx)
         extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
 
-        val muxer = MediaMuxer(out, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val muxer = MediaMuxer(out, outputCodec.muxerFormat)
         val muxTrack = muxer.addTrack(fmt)
         muxer.start()
 
@@ -336,12 +346,17 @@ object AudioTrimmer {
     ): Boolean {
         val encoderFmt = MediaFormat.createAudioFormat(outputCodec.encoderMime, sampleRate, channels)
             .apply {
-                setInteger(MediaFormat.KEY_BIT_RATE, outputCodec.bitRate)
+                if (outputCodec.bitRate > 0) {
+                    setInteger(MediaFormat.KEY_BIT_RATE, outputCodec.bitRate)
+                }
                 if (outputCodec.encoderMime == MediaFormat.MIMETYPE_AUDIO_AAC) {
                     setInteger(
                         MediaFormat.KEY_AAC_PROFILE,
                         MediaCodecInfo.CodecProfileLevel.AACObjectLC
                     )
+                }
+                if (outputCodec.encoderMime == "audio/flac") {
+                    setInteger(MediaFormat.KEY_FLAC_COMPRESSION_LEVEL, 5)
                 }
             }
 
