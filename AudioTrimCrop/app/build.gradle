@@ -1,0 +1,65 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.example.audiotrimcrop'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.example.audiotrimcrop"
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix ".debug"
+            debuggable true
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    // Build variants for Android 15 (API 35) and Android 16 (API 36)
+    flavorDimensions "apiTarget"
+    productFlavors {
+        android15 {
+            dimension "apiTarget"
+            minSdk 35
+            targetSdk 35
+            versionNameSuffix "-android15"
+        }
+        android16 {
+            dimension "apiTarget"
+            minSdk 35
+            targetSdk 35
+            versionNameSuffix "-android16"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+    buildFeatures {
+        viewBinding true
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.1'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
+    implementation 'androidx.activity:activity-ktx:1.9.3'
+}

@@ -1,0 +1,277 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:orientation="vertical">
+
+    <!-- Action bar row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@color/surface"
+        android:elevation="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageButton
+            android:id="@+id/btn_back"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Back"
+            android:src="@drawable/ic_back"
+            android:tint="@color/white" />
+
+        <TextView
+            android:id="@+id/tv_filename"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="16dp"
+            android:layout_weight="1"
+            android:ellipsize="middle"
+            android:maxLines="1"
+            android:textColor="@color/white"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Total duration -->
+    <TextView
+        android:id="@+id/tv_total"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="4dp"
+        android:fontFamily="monospace"
+        android:textColor="@color/text_dim"
+        android:textSize="12sp" />
+
+    <!-- Original file codec · bitrate · sample rate -->
+    <TextView
+        android:id="@+id/tv_file_info"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="2dp"
+        android:textColor="@color/accent"
+        android:textSize="12sp" />
+
+    <!-- Waveform + loading overlay -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="12dp"
+        android:layout_weight="1"
+        android:minHeight="140dp">
+
+        <com.example.audiotrimcrop.WaveformView
+            android:id="@+id/waveform"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:paddingLeft="20dp"
+            android:paddingRight="20dp" />
+
+        <LinearLayout
+            android:id="@+id/loading_overlay"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:visibility="visible">
+
+            <ProgressBar
+                android:id="@+id/pb_load"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:indeterminateTint="@color/accent" />
+
+            <TextView
+                android:id="@+id/tv_hint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/analyzing"
+                android:textColor="@color/text_dim"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <!-- Playback / seek position bar -->
+    <SeekBar
+        android:id="@+id/seek_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginLeft="20dp"
+        android:layout_marginRight="20dp"
+        android:layout_marginTop="6dp"
+        android:layout_marginBottom="2dp"
+        android:max="10000"
+        android:progressTint="@color/accent"
+        android:thumbTint="@color/accent"
+        android:enabled="false" />
+
+    <!-- Current position / total duration -->
+    <TextView
+        android:id="@+id/tv_play_time"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="2dp"
+        android:fontFamily="monospace"
+        android:textColor="@color/white"
+        android:textSize="13sp"
+        android:text="00:00.00 / --:--" />
+
+    <!-- Start / End timestamps -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="28dp"
+        android:orientation="horizontal"
+        android:paddingLeft="24dp"
+        android:paddingRight="24dp">
+
+        <TextView
+            android:id="@+id/tv_start"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical"
+            android:layout_weight="1"
+            android:fontFamily="monospace"
+            android:textColor="@color/handle"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/tv_end"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical"
+            android:layout_weight="1"
+            android:gravity="end"
+            android:fontFamily="monospace"
+            android:textColor="@color/handle"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- Selection length -->
+    <TextView
+        android:id="@+id/tv_sel_len"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="8dp"
+        android:textColor="@color/text_dim"
+        android:textSize="13sp" />
+
+    <!-- Playback controls: rewind | play/pause | forward -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="12dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageButton
+            android:id="@+id/btn_rewind"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_circle"
+            android:contentDescription="@string/rewind"
+            android:src="@android:drawable/ic_media_rew"
+            android:tint="@color/white" />
+
+        <ImageButton
+            android:id="@+id/btn_play"
+            android:layout_width="60dp"
+            android:layout_height="60dp"
+            android:background="@drawable/bg_circle"
+            android:contentDescription="@string/play_pause"
+            android:src="@android:drawable/ic_media_play"
+            android:tint="@color/white" />
+
+        <ImageButton
+            android:id="@+id/btn_forward"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/bg_circle"
+            android:contentDescription="@string/forward"
+            android:src="@android:drawable/ic_media_ff"
+            android:tint="@color/white" />
+
+    </LinearLayout>
+
+    <!-- Playback speed control -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingLeft="24dp"
+        android:paddingRight="24dp"
+        android:layout_marginBottom="10dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:text="@string/speed"
+            android:textColor="@color/text_dim"
+            android:textSize="13sp" />
+
+        <SeekBar
+            android:id="@+id/seek_speed"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="39"
+            android:progress="9"
+            android:progressTint="@color/accent"
+            android:thumbTint="@color/accent"
+            android:enabled="false" />
+
+        <TextView
+            android:id="@+id/tv_speed"
+            android:layout_width="44dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:fontFamily="monospace"
+            android:gravity="end"
+            android:text="1.0×"
+            android:textColor="@color/accent"
+            android:textSize="13sp" />
+
+    </LinearLayout>
+
+    <!-- Export progress bar -->
+    <ProgressBar
+        android:id="@+id/pb_export"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="6dp"
+        android:layout_marginLeft="24dp"
+        android:layout_marginRight="24dp"
+        android:layout_marginBottom="8dp"
+        android:max="100"
+        android:progressTint="@color/accent"
+        android:visibility="gone" />
+
+    <!-- Export button -->
+    <Button
+        android:id="@+id/btn_export"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:layout_marginLeft="32dp"
+        android:layout_marginRight="32dp"
+        android:layout_marginBottom="24dp"
+        android:background="@drawable/bg_btn"
+        android:text="@string/export"
+        android:textColor="@color/white"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+</LinearLayout>
