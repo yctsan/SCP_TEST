@@ -62,8 +62,8 @@ object AudioTrimmer {
         ),
         FLAC_LOSSLESS(
             "audio/flac", 0,
-            MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG, "oga",
-            "FLAC Lossless · OGA (no quality loss)", "audio/ogg"
+            MediaMuxer.OutputFormat.MUXER_OUTPUT_OGG, "flac",
+            "FLAC Lossless · FLAC (no quality loss)", "audio/flac"
         ),
     }
 
@@ -115,8 +115,9 @@ object AudioTrimmer {
         val inputIsRaw = inputMime == "audio/raw"
         // Direct bitstream copy when input and output use the same codec — preserves
         // original quality and parameters with no decoding or resampling.
+        // FLAC is excluded: we write raw FLAC without a muxer (OGG muxer is unreliable for FLAC).
         val sameCodec = (inputIsAac && outputIsAac) ||
-            (!inputIsRaw && inputMime == outputCodec.encoderMime)
+            (!inputIsRaw && inputMime == outputCodec.encoderMime && outputCodec.encoderMime != "audio/flac")
 
         return when {
             sameCodec ->
@@ -344,6 +345,9 @@ object AudioTrimmer {
         outputCodec: OutputCodec,
         onProgress: ((Int) -> Unit)?
     ): Boolean {
+        // FLAC bypasses MediaMuxer: write a raw .flac bitstream directly.
+        if (outputCodec.encoderMime == "audio/flac")
+            return encodePcmToRawFlac(pcmFile, sampleRate, channels, out, onProgress)
         val encoderFmt = MediaFormat.createAudioFormat(outputCodec.encoderMime, sampleRate, channels)
             .apply {
                 if (outputCodec.bitRate > 0) {
@@ -427,5 +431,113 @@ object AudioTrimmer {
 
         onProgress?.invoke(100)
         return muxerStarted
+    }
+
+    // ── Raw FLAC writer (no MediaMuxer) ───────────────────────────────────────
+    //
+    // Android's OGG muxer is not reliable with audio/flac. Instead we assemble
+    // a standard .flac file manually:
+    //   4 bytes  "fLaC" stream marker
+    //   4 bytes  metadata block header  (is_last=1, type=0=STREAMINFO, 3-byte length)
+    //  34 bytes  STREAMINFO data        (from the encoder's BUFFER_FLAG_CODEC_CONFIG output)
+    //   …        raw FLAC audio frames  (remaining encoder output)
+
+    private fun encodePcmToRawFlac(
+        pcmFile: File,
+        sampleRate: Int,
+        channels: Int,
+        out: FileDescriptor,
+        onProgress: ((Int) -> Unit)?
+    ): Boolean {
+        val encoderFmt = MediaFormat.createAudioFormat("audio/flac", sampleRate, channels).apply {
+            setInteger(MediaFormat.KEY_FLAC_COMPRESSION_LEVEL, 5)
+        }
+        val encoder = MediaCodec.createEncoderByType("audio/flac")
+        encoder.configure(encoderFmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        encoder.start()
+
+        val fos = FileOutputStream(out)
+        var headerWritten = false
+
+        val totalBytes = pcmFile.length()
+        val frameBytes = 1024 * channels * 2
+        var bytesConsumed = 0L
+        var encInputDone = false
+        var encOutputDone = false
+        val encInfo = MediaCodec.BufferInfo()
+
+        try {
+            BufferedInputStream(FileInputStream(pcmFile), 256 * 1024).use { pcmIn ->
+                while (!encOutputDone) {
+                    if (!encInputDone) {
+                        val idx = encoder.dequeueInputBuffer(10_000L)
+                        if (idx >= 0) {
+                            val ib = encoder.getInputBuffer(idx)!!
+                            ib.clear()
+                            val toRead = minOf(frameBytes, ib.capacity())
+                            val tmp = ByteArray(toRead)
+                            val n = pcmIn.read(tmp, 0, toRead)
+                            if (n <= 0) {
+                                encoder.queueInputBuffer(idx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                encInputDone = true
+                            } else {
+                                ib.put(tmp, 0, n)
+                                val pts = bytesConsumed * 1_000_000L / (channels.toLong() * 2L * sampleRate)
+                                encoder.queueInputBuffer(idx, 0, n, pts, 0)
+                                bytesConsumed += n
+                                if (totalBytes > 0)
+                                    onProgress?.invoke(50 + (bytesConsumed * 49L / totalBytes).toInt().coerceIn(0, 49))
+                            }
+                        }
+                    }
+                    val outIdx = encoder.dequeueOutputBuffer(encInfo, 10_000L)
+                    when {
+                        outIdx >= 0 -> {
+                            val ob = encoder.getOutputBuffer(outIdx)
+                            if (ob != null && encInfo.size > 0) {
+                                val data = ByteArray(encInfo.size)
+                                ob.get(data)
+                                val isConfig = encInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
+                                if (isConfig) {
+                                    // Check whether encoder already prepended the "fLaC" marker
+                                    val hasMarker = data.size >= 4 &&
+                                        data[0] == 0x66.toByte() && data[1] == 0x4C.toByte() &&
+                                        data[2] == 0x61.toByte() && data[3] == 0x43.toByte()
+                                    if (hasMarker) {
+                                        fos.write(data)
+                                    } else {
+                                        // Write marker + metadata block header + STREAMINFO bytes
+                                        fos.write(byteArrayOf(0x66, 0x4C, 0x61, 0x43))
+                                        val len = data.size
+                                        fos.write(byteArrayOf(
+                                            0x80.toByte(),
+                                            ((len shr 16) and 0xFF).toByte(),
+                                            ((len shr 8) and 0xFF).toByte(),
+                                            (len and 0xFF).toByte()
+                                        ))
+                                        fos.write(data)
+                                    }
+                                    headerWritten = true
+                                } else {
+                                    fos.write(data)
+                                }
+                            }
+                            encoder.releaseOutputBuffer(outIdx, false)
+                            if (encInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0)
+                                encOutputDone = true
+                        }
+                        outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {}
+                        outIdx == MediaCodec.INFO_TRY_AGAIN_LATER -> if (encInputDone) encOutputDone = true
+                    }
+                }
+            }
+        } finally {
+            fos.flush()
+            encoder.stop()
+            encoder.release()
+        }
+
+        onProgress?.invoke(100)
+        return headerWritten
     }
 }
